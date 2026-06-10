@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <h2>Add Vehicle</h2>
+    <form method="post">
+        {% csrf_token %}
+        <label>Vehicle License:</label><br>
+        <input type="text" name="vehicle_license"><br><br>
+
+        <label>Driver License:</label><br>
+        <input type="text" name="vehicle_driver_license"><br><br>
+
+        <label>Vehicle Type:</label><br>
+        <input type="text" name="vehicle_type"><br><br>
+
+        <label>Driver Phone:</label><br>
+        <input type="text" name="vehicle_driver_phone"><br><br>
+
+        <label>Vehicle Model:</label><br>
+        <input type="text" name="vehicle_model"><br><br>
+
+        <label>Registration Number:</label><br>
+        <input type="text" name="vehicle_registration_number"><br><br>
+
+        <button type="submit">Submit</button>
+    </form>
+</body>
+</html>
