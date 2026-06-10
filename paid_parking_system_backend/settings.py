@@ -67,9 +67,12 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 
 ]
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173", # Vite default port
+]
  
 
-CORS_ALLOW_ALL_ORIGINS = True
+#CORS_ALLOW_ALL_ORIGINS = True
 
 ROOT_URLCONF = 'paid_parking_system_backend.urls'
 
