@@ -108,46 +108,71 @@ from .models import VehicleRegistration
 from .serializers import VehicleRegistrationSerializer
 
 
+def owned_vehicles(user):
+    """
+    Vehicles the given user is allowed to see. Staff see everything; regular
+    users only see their own. Used by every vehicle lookup so that an object
+    belonging to another user is a 404, never a 200.
+    """
+    queryset = VehicleRegistration.objects.filter(is_active=True)
+    if user.is_staff:
+        return queryset
+    return queryset.filter(owner=user)
+
+
 class VehicleRegistrationListCreateView(APIView):
-    
+
     permission_classes = [IsAuthenticated]
     # MultiPartParser + FormParser to support vehicle_image upload
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get(self, request):
         vehicle_type = request.query_params.get('type')
-        queryset = VehicleRegistration.objects.filter(is_active=True)
+        queryset = owned_vehicles(request.user)
         if vehicle_type:
+            valid_types = dict(VehicleRegistration.VEHICLE_TYPE_CHOICES)
+            if vehicle_type not in valid_types:
+                return Response(
+                    {'error': f'Unknown vehicle type. Choose one of: {", ".join(valid_types)}.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             queryset = queryset.filter(vehicle_type=vehicle_type)
 
-        serializer = VehicleRegistrationSerializer(queryset, many=True)
-        return Response({'count': queryset.count(), 'results': serializer.data})
+        serializer = VehicleRegistrationSerializer(
+            queryset, many=True, context={'request': request}
+        )
+        data = serializer.data
+        return Response({'count': len(data), 'results': data})
 
     def post(self, request):
-        serializer = VehicleRegistrationSerializer(data=request.data)
+        serializer = VehicleRegistrationSerializer(
+            data=request.data, context={'request': request}
+        )
         if serializer.is_valid():
-            serializer.save()
+            serializer.save(owner=request.user)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class VehicleRegistrationDetailView(APIView):
-    
+
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_object(self, pk):
-        return get_object_or_404(VehicleRegistration, pk=pk, is_active=True)
+        return get_object_or_404(owned_vehicles(self.request.user), pk=pk)
 
     def get(self, request, pk):
         vehicle = self.get_object(pk)
-        serializer = VehicleRegistrationSerializer(vehicle)
+        serializer = VehicleRegistrationSerializer(
+            vehicle, context={'request': request}
+        )
         return Response(serializer.data)
 
     def put(self, request, pk):
         vehicle = self.get_object(pk)
         serializer = VehicleRegistrationSerializer(
-            vehicle, data=request.data, partial=True
+            vehicle, data=request.data, partial=True, context={'request': request}
         )
         if serializer.is_valid():
             serializer.save()
@@ -156,6 +181,15 @@ class VehicleRegistrationDetailView(APIView):
 
     def delete(self, request, pk):
         vehicle = self.get_object(pk)
+
+        # Deactivating a vehicle mid-stay would orphan the booking and leave the
+        # slot permanently occupied.
+        if vehicle.bookings.filter(is_active=True).exists():
+            return Response(
+                {'error': 'Vehicle has an active booking. Check out before deactivating.'},
+                status=status.HTTP_409_CONFLICT
+            )
+
         vehicle.is_active = False
         vehicle.save(update_fields=['is_active', 'updated_at'])
         return Response(
@@ -165,7 +199,7 @@ class VehicleRegistrationDetailView(APIView):
 
 
 class VehicleSearchView(APIView):
-   
+
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -176,9 +210,11 @@ class VehicleSearchView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        vehicles = VehicleRegistration.objects.filter(
-            vehicle_license__icontains=license_plate,
-            is_active=True
+        vehicles = owned_vehicles(request.user).filter(
+            vehicle_license__icontains=license_plate
         )
-        serializer = VehicleRegistrationSerializer(vehicles, many=True)
-        return Response({'count': vehicles.count(), 'results': serializer.data})
+        serializer = VehicleRegistrationSerializer(
+            vehicles, many=True, context={'request': request}
+        )
+        data = serializer.data
+        return Response({'count': len(data), 'results': data})

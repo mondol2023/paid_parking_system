@@ -49,6 +49,7 @@ class VehicleRegistration(models.Model):
         return f"{self.vehicle_model } - {self.vehicle_license}"
     
 """
+from django.conf import settings
 from django.db import models
 
 
@@ -70,6 +71,15 @@ class VehicleRegistration(models.Model):
         (TRUCK, "Truck"),
     ]
 
+    # Owning user — every ownership check in bookings/payments resolves through
+    # this FK, so it must be set on creation and never accepted from the client.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='vehicles',
+        null=True, blank=True,
+        help_text='User who registered this vehicle.',
+    )
     vehicle_name = models.CharField(max_length=50, blank=True, null=True)
     vehicle_model = models.CharField(max_length=50)
     vehicle_license = models.CharField(max_length=100, unique=True)   # added unique

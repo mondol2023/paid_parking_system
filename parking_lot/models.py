@@ -21,6 +21,10 @@ class ParkingLot(models.Model):
 
     @property
     def available_slots_count(self):
+        # List endpoints prefetch `slots`; counting in Python reuses that cache.
+        # .filter() would ignore it and fire one COUNT per lot (N+1).
+        if 'slots' in getattr(self, '_prefetched_objects_cache', {}):
+            return sum(1 for slot in self.slots.all() if slot.is_available)
         return self.slots.filter(is_available=True).count()
 
 

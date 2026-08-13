@@ -1,111 +1,175 @@
+@import 'tailwindcss';
+
+/*
+  Theme is always stamped explicitly on <html data-theme="..."> by the inline
+  script in index.html, so a single attribute selector covers both the OS
+  preference and the user's toggle. No prefers-color-scheme branch is needed
+  in component styles.
+*/
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/* ---------------------------------------------------------------------------
+   Palette — parking wayfinding. Concrete neutrals carry a faint green bias so
+   they read as chosen rather than default grey; signage yellow is the single
+   accent and is spent only on the primary action and the occupancy meter.
+   --------------------------------------------------------------------------- */
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --ground: #f6f8f7;
+  --surface: #ffffff;
+  --surface-2: #eef2f1;
+  --ink: #14181a;
+  --muted: #5c6b70;
+  --line: #dde3e1;
+  --line-strong: #c3cccb;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --accent: #e0a800;
+  --accent-soft: #fdf3d4;
+  --accent-ink: #1a1400; /* text placed on --accent */
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --open: #17805a;
+  --open-soft: #dff0e8;
+  --taken: #9aa8a5;
+  --taken-soft: #eaeeed;
+  --alert: #c0392b;
+  --alert-soft: #fbe6e3;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
+  --overlay: rgb(20 24 26 / 0.55);
+  --shadow-card: 0 1px 2px rgb(20 24 26 / 0.05), 0 8px 24px -12px rgb(20 24 26 / 0.18);
+}
+
+[data-theme='dark'] {
+  --ground: #0e1214;
+  --surface: #171d20;
+  --surface-2: #1f272a;
+  --ink: #e8edeb;
+  --muted: #93a2a5;
+  --line: #283034;
+  --line-strong: #3a4549;
+
+  --accent: #f5c518;
+  --accent-soft: #33290a;
+  --accent-ink: #171100;
+
+  --open: #2fa97a;
+  --open-soft: #102b21;
+  --taken: #6b797c;
+  --taken-soft: #232b2e;
+  --alert: #e5644e;
+  --alert-soft: #351a16;
+
+  --overlay: rgb(0 0 0 / 0.66);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+}
+
+/*
+  `inline` makes the generated utilities reference var(--ground) rather than
+  baking in the light value, so flipping data-theme reflows the whole palette.
+*/
+@theme inline {
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+
+  --color-open: var(--open);
+  --color-open-soft: var(--open-soft);
+  --color-taken: var(--taken);
+  --color-taken-soft: var(--taken-soft);
+  --color-alert: var(--alert);
+  --color-alert-soft: var(--alert-soft);
+
+  --font-display: 'Barlow Semi Condensed', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Public Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --shadow-card: var(--shadow-card);
+}
+
+@layer base {
+  * {
+    border-color: var(--line);
   }
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+  html {
+    -webkit-text-size-adjust: 100%;
   }
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
-}
 
-body {
-  margin: 0;
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0;
   }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
+
+  /* Digits that sit in columns — money, distances, timers — must not shift. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
   }
-}
-p {
-  margin: 0;
-}
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+  /* Uppercase eyebrow/label text used across cards and table headers. */
+  .label-caps {
+    font-family: var(--font-display);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /*
+    License plates. The mono face plus a hairline border reads as the physical
+    object, which makes a vehicle scannable in a list at a glance.
+  */
+  .plate {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--line-strong);
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }

@@ -1,0 +1,169 @@
+{% extends "admin/index.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="parking-dashboard">
+  <style>
+    .parking-dashboard .pd-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .parking-dashboard .pd-card {
+      border: 1px solid var(--hairline-color, #e0e0e0);
+      border-radius: 6px;
+      background: var(--body-bg, #fff);
+      padding: 12px 14px;
+    }
+    .parking-dashboard .pd-card h3 {
+      margin: 0 0 6px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--body-quiet-color, #666);
+    }
+    .parking-dashboard .pd-value { font-size: 24px; font-weight: 600; line-height: 1.1; }
+    .parking-dashboard .pd-meta { font-size: 12px; color: var(--body-quiet-color, #666); }
+    .parking-dashboard .pd-tables {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+      margin-bottom: 28px;
+    }
+    .parking-dashboard .pd-table-wrap { overflow-x: auto; }
+    .parking-dashboard table { width: 100%; border-collapse: collapse; }
+    .parking-dashboard th, .parking-dashboard td {
+      text-align: left;
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--hairline-color, #eee);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .parking-dashboard .pd-empty { color: var(--body-quiet-color, #666); font-size: 13px; }
+  </style>
+
+  <h1>{% translate "At a glance" %}</h1>
+
+  <div class="pd-cards">
+    <div class="pd-card">
+      <h3>{% translate "Users" %}</h3>
+      <div class="pd-value">{{ dashboard.users.total }}</div>
+      <div class="pd-meta">
+        {{ dashboard.users.staff }} staff · {{ dashboard.users.superusers }} superuser ·
+        {{ dashboard.users.inactive }} disabled
+      </div>
+    </div>
+    <div class="pd-card">
+      <h3>{% translate "Vehicles" %}</h3>
+      <div class="pd-value">{{ dashboard.vehicles.active }}</div>
+      <div class="pd-meta">
+        {{ dashboard.vehicles.total }} total · {{ dashboard.vehicles.unowned }} without an owner
+      </div>
+    </div>
+    <div class="pd-card">
+      <h3>{% translate "Parking lots" %}</h3>
+      <div class="pd-value">{{ dashboard.lots.active }}</div>
+      <div class="pd-meta">{{ dashboard.lots.total }} total</div>
+    </div>
+    <div class="pd-card">
+      <h3>{% translate "Slot occupancy" %}</h3>
+      <div class="pd-value">{{ dashboard.slots.occupancy_pct }}%</div>
+      <div class="pd-meta">
+        {{ dashboard.slots.occupied }} occupied · {{ dashboard.slots.available }} free of
+        {{ dashboard.slots.total }}
+      </div>
+    </div>
+    <div class="pd-card">
+      <h3>{% translate "Bookings" %}</h3>
+      <div class="pd-value">{{ dashboard.bookings.active }}</div>
+      <div class="pd-meta">
+        active · {{ dashboard.bookings.completed }} completed ·
+        {{ dashboard.bookings.cancelled }} cancelled · {{ dashboard.bookings.total }} total
+      </div>
+    </div>
+    <div class="pd-card">
+      <h3>{% translate "Revenue collected" %}</h3>
+      <div class="pd-value">{{ dashboard.payments.revenue }}</div>
+      <div class="pd-meta">
+        {{ dashboard.payments.settled }} of {{ dashboard.payments.total }} settled ·
+        {{ dashboard.payments.outstanding }} outstanding
+      </div>
+    </div>
+  </div>
+
+  <div class="pd-tables">
+    <div>
+      <h2>{% translate "Latest bookings" %}</h2>
+      <div class="pd-table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Vehicle</th><th>User</th><th>Lot / slot</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            {% for booking in dashboard.recent_bookings %}
+              <tr>
+                <td>{{ booking.pk }}</td>
+                <td>{{ booking.vehicle.vehicle_license }}</td>
+                <td>{{ booking.vehicle.owner|default:"—" }}</td>
+                <td>{{ booking.slot.lot.name }} / {{ booking.slot.slot_number }}</td>
+                <td>{{ booking.get_status_display }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="5" class="pd-empty">{% translate "No bookings yet." %}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div>
+      <h2>{% translate "Latest payments" %}</h2>
+      <div class="pd-table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Vehicle</th><th>Amount</th><th>Method</th><th>State</th></tr>
+          </thead>
+          <tbody>
+            {% for payment in dashboard.recent_payments %}
+              <tr>
+                <td>{{ payment.pk }}</td>
+                <td>{{ payment.booking.vehicle.vehicle_license }}</td>
+                <td>{{ payment.amount }}</td>
+                <td>{{ payment.get_payment_method_display }}</td>
+                <td>{% if payment.paid %}Paid{% else %}Pending{% endif %}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="5" class="pd-empty">{% translate "No payments yet." %}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div>
+      <h2>{% translate "Busiest lots" %}</h2>
+      <div class="pd-table-wrap">
+        <table>
+          <thead>
+            <tr><th>Lot</th><th>Bookings</th><th>Free slots</th></tr>
+          </thead>
+          <tbody>
+            {% for lot in dashboard.busiest_lots %}
+              <tr>
+                <td>{{ lot.name }}</td>
+                <td>{{ lot.booking_count }}</td>
+                <td>{{ lot.available_slots_count }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="3" class="pd-empty">{% translate "No active lots yet." %}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{ block.super }}
+{% endblock %}

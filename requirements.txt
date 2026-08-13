@@ -3,5 +3,8 @@ djangorestframework>=3.15
 djangorestframework-simplejwt>=5.3
 django-cors-headers>=4.3
 psycopg2-binary>=2.9
+# Required by VehicleRegistration.vehicle_image (Django ImageField); without it
+# the app fails system check fields.E210 and cannot start.
+Pillow>=10.0
 python-dotenv>=1.0
 gunicorn>=21.2

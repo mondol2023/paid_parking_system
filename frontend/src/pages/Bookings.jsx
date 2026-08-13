@@ -1,79 +1,135 @@
-import { useState, useEffect } from 'react';
-import { bookingService, paymentService } from '../api/services';
+import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { motion } from 'motion/react';
+import { SquareParking } from 'lucide-react';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { AsyncBoundary } from '@/components/common/AsyncBoundary';
+import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/Feedback';
+import { staggerParent } from '@/lib/motion';
+import { errorMessage } from '@/lib/errors';
+import { bookingService } from '@/api/services';
+import { useNow } from '@/hooks/useNow';
+import { useToast } from '@/context/ToastContext';
+import { useBookings } from '@/features/bookings/useBookings';
+import { BookingCard } from '@/features/bookings/BookingCard';
+import { CheckoutSummary } from '@/features/bookings/CheckoutSummary';
+import { usePayments } from '@/features/payments/usePayments';
+import { PayModal } from '@/features/payments/PayModal';
 
 export default function Bookings() {
-  const [bookings, setBookings] = useState([]);
-  const [payingBooking, setPayingBooking] = useState(null);
-  const [payMethod, setPayMethod] = useState('cash');
+  const toast = useToast();
+  const navigate = useNavigate();
 
-  useEffect(() => { fetchBookings(); }, []);
+  const { bookings, loading, error, refetch } = useBookings();
+  // The pending Payment row carries the estimated amount for an active stay —
+  // the booking payload itself has no rate to compute one from.
+  const { payments, refetch: refetchPayments } = usePayments();
 
-  const fetchBookings = async () => {
-    const { data } = await bookingService.getAll();
-    setBookings(data);
-  };
+  const now = useNow(1000, bookings.length > 0);
 
-  const handleCheckout = async (id) => {
+  const [checkingOut, setCheckingOut] = useState(null);
+  const [receipt, setReceipt] = useState(null);
+  const [paying, setPaying] = useState(false);
+
+  const estimates = useMemo(
+    () => new Map(payments.filter((p) => !p.paid).map((p) => [p.booking, Number(p.amount)])),
+    [payments],
+  );
+
+  const checkout = async (booking) => {
+    setCheckingOut(booking.id);
     try {
-      const { data } = await bookingService.checkout(id);
-      alert(`Checkout successful! Final Amount: $${data.final_amount}`);
-      setPayingBooking(data); // Trigger payment modal
-      fetchBookings();
+      const result = await bookingService.checkout(booking.id);
+      setReceipt(result);
+      refetch();
+      refetchPayments();
     } catch (err) {
-      alert('Checkout failed');
+      toast.error(errorMessage(err, 'Could not check out. Try again.'));
+    } finally {
+      setCheckingOut(null);
     }
   };
 
-  const handlePayment = async () => {
-    try {
-      await paymentService.confirm(payingBooking.booking_id, {
-        payment_method: payMethod,
-        transaction_id: payMethod === 'mobile_banking' ? 'TXN12345' : '' // Simplified for demo
-      });
-      alert('Payment successful!');
-      setPayingBooking(null);
-      fetchBookings();
-    } catch (err) {
-      alert('Payment failed');
-    }
+  const closeReceipt = () => {
+    const unpaid = receipt && !receipt.paid;
+    setReceipt(null);
+    // The charge outlives the booking; send the user where it now lives.
+    if (unpaid) navigate('/payments');
   };
 
   return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold mb-4">My Active Bookings</h2>
-      <div className="space-y-4">
-        {bookings.map(b => (
-          <div key={b.id} className="border p-4 rounded shadow flex justify-between items-center">
-            <div>
-              <p className="font-bold">Booking #{b.id} - Slot {b.slot.slot_number}</p>
-              <p className="text-sm text-gray-600">Vehicle: {b.vehicle.vehicle_license} | Status: {b.status}</p>
-            </div>
-            {b.status === 'active' && (
-              <button onClick={() => handleCheckout(b.id)} className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">
-                Checkout & Pay
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
+    <>
+      <PageHeader
+        title="Active bookings"
+        description="Stays in progress. Check out to free the bay and settle the charge."
+        actions={
+          <Button onClick={() => navigate('/lots')} variant="primary">
+            Book a bay
+          </Button>
+        }
+      />
 
-      {payingBooking && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white p-6 rounded-lg w-96">
-            <h3 className="text-xl font-bold mb-4">Complete Payment</h3>
-            <p className="mb-4">Amount Due: <span className="font-bold text-green-600">${payingBooking.final_amount}</span></p>
-            <select className="w-full p-2 border rounded mb-4" value={payMethod} onChange={e => setPayMethod(e.target.value)}>
-              <option value="cash">Cash</option>
-              <option value="card">Credit/Debit Card</option>
-              <option value="mobile_banking">Mobile Banking</option>
-            </select>
-            <div className="flex gap-2">
-              <button onClick={handlePayment} className="flex-1 bg-green-600 text-white p-2 rounded">Confirm Payment</button>
-              <button onClick={() => setPayingBooking(null)} className="flex-1 bg-gray-300 p-2 rounded">Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      <AsyncBoundary
+        loading={loading}
+        error={error}
+        onRetry={refetch}
+        empty={
+          bookings.length === 0 && (
+            <EmptyState
+              icon={SquareParking}
+              title="Nothing parked right now"
+              description="Book a bay and it will show here with a live timer."
+              action={
+                <Button variant="primary" onClick={() => navigate('/lots')}>
+                  Find a lot
+                </Button>
+              }
+            />
+          )
+        }
+      >
+        <motion.div
+          variants={staggerParent}
+          initial="initial"
+          animate="animate"
+          className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+        >
+          {bookings.map((booking) => (
+            <BookingCard
+              key={booking.id}
+              booking={booking}
+              now={now}
+              estimate={estimates.get(booking.id)}
+              onCheckout={checkout}
+              pending={checkingOut === booking.id}
+            />
+          ))}
+        </motion.div>
+      </AsyncBoundary>
+
+      <CheckoutSummary
+        open={Boolean(receipt) && !paying}
+        onClose={closeReceipt}
+        receipt={receipt}
+        onPay={() => setPaying(true)}
+      />
+
+      <PayModal
+        open={paying}
+        onClose={() => {
+          setPaying(false);
+          closeReceipt();
+        }}
+        bookingId={receipt?.booking_id}
+        amount={receipt?.final_amount}
+        onPaid={() => {
+          setPaying(false);
+          setReceipt(null);
+          refetchPayments();
+          navigate('/payments');
+        }}
+      />
+    </>
   );
 }

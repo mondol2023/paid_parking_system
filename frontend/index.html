@@ -4,7 +4,24 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <meta name="theme-color" content="#f6f8f7" />
+    <title>Parkline — Parking</title>
+    <script>
+      // Stamp the theme before first paint so the page never flashes the wrong
+      // ground. ThemeContext reads the same key and keeps this in sync.
+      (function () {
+        try {
+          var saved = localStorage.getItem('theme');
+          var system = window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light';
+          document.documentElement.dataset.theme =
+            saved === 'dark' || saved === 'light' ? saved : system;
+        } catch (e) {
+          document.documentElement.dataset.theme = 'light';
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

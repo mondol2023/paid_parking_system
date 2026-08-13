@@ -1,50 +1,59 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './context/AuthContext';
-import Login from './pages/Login';
-import Vehicles from './pages/Vehicles';
-import ParkingLots from './pages/ParkingLots';
-import Bookings from './pages/Bookings';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { AnimatePresence } from 'motion/react';
+import { AppShell } from '@/components/layout/AppShell';
+import { Page } from '@/components/layout/AnimatedRoutes';
+import { ProtectedRoute, PublicOnlyRoute } from '@/components/common/ProtectedRoute';
 
-// Simple Protected Route Wrapper
-const ProtectedRoute = ({ children }) => {
-  const { user } = useAuth();
-  return user ? children : <Navigate to="/login" />;
-};
+import Login from '@/pages/Login';
+import Register from '@/pages/Register';
+import Dashboard from '@/pages/Dashboard';
+import Lots from '@/pages/Lots';
+import Vehicles from '@/pages/Vehicles';
+import Bookings from '@/pages/Bookings';
+import Payments from '@/pages/Payments';
+import Profile from '@/pages/Profile';
+import NotFound from '@/pages/NotFound';
 
-// Basic Layout
-const Layout = ({ children }) => {
-  const { user, logout } = useAuth();
+/** Signed-in pages all share the shell; only the inner content transitions. */
+function Private({ children }) {
   return (
-    <div className="min-h-screen bg-gray-100">
-      <nav className="bg-blue-800 text-white p-4 flex justify-between">
-        <h1 className="text-xl font-bold">Parking System</h1>
-        <div className="space-x-4">
-          <a href="/dashboard" className="hover:underline">Lots</a>
-          <a href="/vehicles" className="hover:underline">Vehicles</a>
-          <a href="/bookings" className="hover:underline">Bookings</a>
-          <button onClick={logout} className="bg-red-500 px-3 py-1 rounded">Logout ({user?.username})</button>
-        </div>
-      </nav>
-      <main className="p-4">{children}</main>
-    </div>
+    <ProtectedRoute>
+      <AppShell>
+        <Page>{children}</Page>
+      </AppShell>
+    </ProtectedRoute>
   );
-};
+}
+
+function Public({ children }) {
+  return (
+    <PublicOnlyRoute>
+      <Page>{children}</Page>
+    </PublicOnlyRoute>
+  );
+}
 
 export default function App() {
+  const location = useLocation();
+
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Login />} /> {/* Reuse login style or create separate Register component */}
-          
-          <Route path="/dashboard" element={<ProtectedRoute><Layout><ParkingLots /></Layout></ProtectedRoute>} />
-          <Route path="/vehicles" element={<ProtectedRoute><Layout><Vehicles /></Layout></ProtectedRoute>} />
-          <Route path="/bookings" element={<ProtectedRoute><Layout><Bookings /></Layout></ProtectedRoute>} />
-          
-          <Route path="*" element={<Navigate to="/dashboard" />} />
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+    // mode="wait" lets the outgoing page finish before the next one rises in.
+    <AnimatePresence mode="wait" initial={false}>
+      <Routes location={location} key={location.pathname}>
+        <Route path="/login" element={<Public><Login /></Public>} />
+        <Route path="/register" element={<Public><Register /></Public>} />
+
+        <Route path="/" element={<Private><Dashboard /></Private>} />
+        <Route path="/lots" element={<Private><Lots /></Private>} />
+        <Route path="/vehicles" element={<Private><Vehicles /></Private>} />
+        <Route path="/bookings" element={<Private><Bookings /></Private>} />
+        <Route path="/payments" element={<Private><Payments /></Private>} />
+        <Route path="/profile" element={<Private><Profile /></Private>} />
+
+        {/* The old app aliased /dashboard as the home route. */}
+        <Route path="/dashboard" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Page><NotFound /></Page>} />
+      </Routes>
+    </AnimatePresence>
   );
 }

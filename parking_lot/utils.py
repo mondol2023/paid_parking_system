@@ -1,5 +1,8 @@
 import math
 from typing import List, Tuple
+
+from django.db.models import Q
+
 from .models import ParkingLot
 
 
@@ -37,14 +40,31 @@ def get_nearest_lots(
     """
     # 1° latitude ≈ 111 km, so delta_lat = radius / 111
     delta_lat = radius_km / 111.0
-    delta_lon = radius_km / (111.0 * math.cos(math.radians(user_lat)))
+
+    # Longitude degrees shrink towards the poles: cos(lat) → 0, so the divisor
+    # can be zero (ZeroDivisionError) or tiny (a box wider than the globe).
+    cos_lat = math.cos(math.radians(user_lat))
+    if cos_lat <= 0.0:
+        delta_lon = 180.0
+    else:
+        delta_lon = min(radius_km / (111.0 * cos_lat), 180.0)
+
+    lat_filter = {
+        'latitude__gte': max(user_lat - delta_lat, -90.0),
+        'latitude__lte': min(user_lat + delta_lat, 90.0),
+    }
+
+    west, east = user_lon - delta_lon, user_lon + delta_lon
+    if west < -180.0 or east > 180.0:
+        # The box crosses the antimeridian (or spans every meridian); a plain
+        # BETWEEN would exclude the wrapped half, so skip the longitude filter
+        # and let the exact Haversine pass below do the filtering.
+        lon_query = Q()
+    else:
+        lon_query = Q(longitude__gte=west, longitude__lte=east)
 
     candidate_lots = ParkingLot.objects.filter(
-        is_active=True,
-        latitude__gte=user_lat - delta_lat,
-        latitude__lte=user_lat + delta_lat,
-        longitude__gte=user_lon - delta_lon,
-        longitude__lte=user_lon + delta_lon,
+        Q(is_active=True, **lat_filter) & lon_query
     ).prefetch_related('slots', 'rates')
 
     results = []

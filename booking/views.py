@@ -17,6 +17,8 @@ def Booking(request):
     return render(request, 'booking.html')
 
 """
+from decimal import Decimal, ROUND_HALF_UP
+
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.db import transaction
@@ -30,6 +32,34 @@ from .models import Booking
 from .serializers import BookingSerializer, BookingDetailSerializer
 from parking_lot.models import Slot, ParkingRate
 from payment.models import Payment
+
+MONEY = Decimal('0.01')
+
+
+def owned_bookings(user, active_only=True):
+    """
+    Bookings the given user may see. Ownership is derived through the vehicle's
+    owner, so an out-of-scope pk 404s instead of leaking another user's stay.
+    """
+    queryset = Booking.objects.select_related('vehicle', 'slot', 'slot__lot')
+    if active_only:
+        queryset = queryset.filter(is_active=True)
+    if user.is_staff:
+        return queryset
+    return queryset.filter(vehicle__owner=user)
+
+
+def rate_for(lot, vehicle_type):
+    """Lot-specific rate if configured, otherwise the global fallback rate."""
+    return (
+        ParkingRate.objects.filter(lot=lot, vehicle_type=vehicle_type).first()
+        or ParkingRate.objects.filter(lot__isnull=True, vehicle_type=vehicle_type).first()
+    )
+
+
+def to_money(value):
+    """Round a Decimal to 2 places the way currency is normally rounded."""
+    return value.quantize(MONEY, rounding=ROUND_HALF_UP)
 
 
 class BookingCreateView(APIView):
@@ -45,7 +75,9 @@ class BookingCreateView(APIView):
 
     @transaction.atomic
     def post(self, request):
-        serializer = BookingSerializer(data=request.data)
+        # The request goes into the context so the serializer can verify that
+        # the submitted vehicle actually belongs to the caller.
+        serializer = BookingSerializer(data=request.data, context={'request': request})
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -53,12 +85,18 @@ class BookingCreateView(APIView):
 
         # Lock the row to prevent double-booking (SELECT FOR UPDATE)
         try:
-            slot = Slot.objects.select_for_update().get(pk=slot_id)
+            slot = Slot.objects.select_for_update().select_related('lot').get(pk=slot_id)
         except Slot.DoesNotExist:
             return Response({'error': 'Slot not found.'}, status=status.HTTP_404_NOT_FOUND)
 
         if not slot.is_available:
             return Response({'error': 'Slot is already booked.'}, status=status.HTTP_409_CONFLICT)
+
+        if not slot.lot.is_active:
+            return Response(
+                {'error': 'Parking lot is not accepting bookings.'},
+                status=status.HTTP_409_CONFLICT
+            )
 
         # Create booking
         booking = serializer.save()
@@ -67,17 +105,13 @@ class BookingCreateView(APIView):
         slot.is_available = False
         slot.save(update_fields=['is_available'])
 
-        # Calculate estimated amount and create pending payment
-        vehicle_type = booking.vehicle.vehicle_type
-        rate_obj = ParkingRate.objects.filter(
-            lot=slot.lot, vehicle_type=vehicle_type
-        ).first() or ParkingRate.objects.filter(
-            lot__isnull=True, vehicle_type=vehicle_type
-        ).first()
-
-        estimated_amount = 0
-        if rate_obj:
-            estimated_amount = rate_obj.rate_per_hour * booking.reserve_time
+        # Calculate estimated amount and create pending payment. reserve_time is
+        # a DecimalField, so the whole computation stays in Decimal.
+        rate_obj = rate_for(slot.lot, booking.vehicle.vehicle_type)
+        estimated_amount = (
+            to_money(rate_obj.rate_per_hour * booking.reserve_time)
+            if rate_obj else Decimal('0.00')
+        )
 
         Payment.objects.create(
             booking=booking,
@@ -86,7 +120,7 @@ class BookingCreateView(APIView):
         )
 
         return Response(
-            BookingDetailSerializer(booking).data,
+            BookingDetailSerializer(booking, context={'request': request}).data,
             status=status.HTTP_201_CREATED
         )
 
@@ -98,8 +132,8 @@ class BookingDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, pk):
-        booking = get_object_or_404(Booking, pk=pk, is_active=True)
-        serializer = BookingDetailSerializer(booking)
+        booking = get_object_or_404(owned_bookings(request.user), pk=pk)
+        serializer = BookingDetailSerializer(booking, context={'request': request})
         return Response(serializer.data)
 
 
@@ -116,10 +150,18 @@ class BookingCheckoutView(APIView):
 
     @transaction.atomic
     def post(self, request, pk):
-        booking = get_object_or_404(Booking, pk=pk, is_active=True)
+        # Lock the booking row itself (of='self' keeps the lock off the joined
+        # vehicle/slot rows) so two concurrent checkouts cannot both proceed.
+        booking = get_object_or_404(
+            owned_bookings(request.user, active_only=False).select_for_update(of=('self',)),
+            pk=pk,
+        )
 
         if booking.status == Booking.STATUS_COMPLETED:
             return Response({'error': 'Booking already checked out.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if booking.status == Booking.STATUS_CANCELLED:
+            return Response({'error': 'Booking was cancelled.'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Set checkout time
         booking.check_out = timezone.now()
@@ -127,33 +169,37 @@ class BookingCheckoutView(APIView):
         booking.is_active = False
         booking.save(update_fields=['check_out', 'status', 'is_active', 'updated_at'])
 
-        # Free the slot
-        slot = booking.slot
+        # Free the slot under its own lock — the create path locks the same row.
+        slot = Slot.objects.select_for_update().select_related('lot').get(pk=booking.slot_id)
         slot.is_available = True
         slot.save(update_fields=['is_available'])
 
-        # Recalculate final amount
-        vehicle_type = booking.vehicle.vehicle_type
-        rate_obj = ParkingRate.objects.filter(
-            lot=slot.lot, vehicle_type=vehicle_type
-        ).first() or ParkingRate.objects.filter(
-            lot__isnull=True, vehicle_type=vehicle_type
-        ).first()
+        # Recalculate final amount. actual_hours is a float property, so it is
+        # converted via str() to avoid binary-float noise entering the Decimal.
+        rate_obj = rate_for(slot.lot, booking.vehicle.vehicle_type)
+        actual_hours = booking.actual_hours
+        computed_amount = (
+            to_money(rate_obj.rate_per_hour * Decimal(str(actual_hours)))
+            if rate_obj else Decimal('0.00')
+        )
 
-        final_amount = 0
-        if rate_obj:
-            final_amount = round(float(rate_obj.rate_per_hour) * booking.actual_hours, 2)
+        # A booking always gets a Payment at creation time; get_or_create covers
+        # rows created before that guarantee existed instead of raising a 500.
+        payment, _ = Payment.objects.get_or_create(
+            booking=booking,
+            defaults={'amount': computed_amount, 'paid': False},
+        )
 
-        # Update payment with final amount
-        payment = booking.payment
-        payment.amount = final_amount
-        payment.save(update_fields=['amount'])
+        # Never rewrite the amount of a payment that has already been settled.
+        if not payment.paid:
+            payment.amount = computed_amount
+            payment.save(update_fields=['amount', 'updated_at'])
 
         return Response({
             'message': 'Checkout successful.',
             'booking_id': booking.pk,
-            'actual_hours': booking.actual_hours,
-            'final_amount': final_amount,
+            'actual_hours': actual_hours,
+            'final_amount': payment.amount,
             'payment_id': payment.pk,
             'paid': payment.paid,
         })
@@ -166,8 +212,9 @@ class BookingListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        bookings = Booking.objects.filter(is_active=True).select_related(
-            'vehicle', 'slot', 'slot__lot'
+        bookings = owned_bookings(request.user)
+        serializer = BookingDetailSerializer(
+            bookings, many=True, context={'request': request}
         )
-        serializer = BookingDetailSerializer(bookings, many=True)
-        return Response(serializer.data)
+        data = serializer.data
+        return Response({'count': len(data), 'results': data})
